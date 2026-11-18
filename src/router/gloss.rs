@@ -3009,7 +3009,7 @@ pub fn generate_bga_dogbone_escapes(board: &mut Board, grid: &mut RoutingGrid) {
             let ring = bga_info.pad_rings[pad_idx];
             let netclass = board.get_netclass_for_net(pad_net_id);
             let trk_w = (netclass.track_width).min(0.20);
-            let stub_w = (netclass.track_width).min(0.15);
+            let stub_w = (netclass.track_width).min(netclass.min_track_width.max(0.15));
 
             if ring == 0 {
                 // Ring 0 (outer perimeter): direct surface escape tracks shooting outward away from chip without vias

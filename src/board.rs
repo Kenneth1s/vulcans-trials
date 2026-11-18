@@ -4415,6 +4415,36 @@ impl Board {
         }
     }
 
+    /// Narrowest width the router may neck a track on `net_id` down to in tight spots.
+    ///
+    /// # Arguments
+    /// * `net_id` - Numeric net ID.
+    ///
+    /// # Returns
+    /// 0.15 mm, or the net class's minimum track width if that is larger, so a neck-down never
+    /// goes below the project's design rules.
+    ///
+    /// # Side Effects
+    /// None.
+    pub fn neckdown_width(&self, net_id: usize) -> f64 {
+        self.get_netclass_for_net(net_id).min_track_width.max(0.15)
+    }
+
+    /// Smallest clearance the router may fall back to in tight spots.
+    ///
+    /// # Arguments
+    /// * `floor` - The router's own fallback clearance in mm.
+    ///
+    /// # Returns
+    /// `floor`, or the board's smallest net class clearance if that is larger, so a fallback
+    /// never breaks the project's design rules.
+    ///
+    /// # Side Effects
+    /// None.
+    pub fn neckdown_clearance(&self, floor: f64) -> f64 {
+        floor.max(self.design_rules().min_clearance)
+    }
+
     /// Looks up the [`NetClass`] governing `net_id`, falling back to `"Default"` if unassigned.
     ///
     /// # Arguments

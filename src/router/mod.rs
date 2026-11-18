@@ -1658,7 +1658,7 @@ impl AutoRouter {
                         .get(conn.end_fp)
                         .is_some_and(|fp| fp.reference == "U1" || fp.reference == "J2" || fp.min_pad_pitch() <= 0.65);
                 if !is_power_net || touches_05mm_ic {
-                    conn.netclass.track_width = conn.netclass.track_width.min(0.15);
+                    conn.netclass.track_width = conn.netclass.track_width.min(conn.netclass.min_track_width.max(0.15));
                 }
                 conn.netclass.diff_pair_width = conn.netclass.diff_pair_width.min(0.20);
                 conn.netclass.diff_pair_gap = conn.netclass.diff_pair_gap.min(0.15);
@@ -1679,7 +1679,7 @@ impl AutoRouter {
             }
             if is_passive_terminal {
                 if !is_power_net && !conn.netclass.name.starts_with("Power") && conn.netclass.name != "P1P2_Bus" {
-                    conn.netclass.track_width = conn.netclass.track_width.min(0.15);
+                    conn.netclass.track_width = conn.netclass.track_width.min(conn.netclass.min_track_width.max(0.15));
                     conn.netclass.via_dia = conn.netclass.via_dia.min(0.60);
                     let min_annular = board.design_rules().min_via_annular_width;
                     let min_drill = board.design_rules().min_via_drill;
@@ -3899,8 +3899,8 @@ impl AutoRouter {
                             )
                         })
                         .or_else(|| {
-                            used_w = conn.netclass.track_width.min(0.15);
-                            used_c = conn.netclass.clearance.min(0.12);
+                            used_w = conn.netclass.track_width.min(conn.netclass.min_track_width.max(0.15));
+                            used_c = conn.netclass.clearance.min(board.neckdown_clearance(0.12));
                             self.find_path_with_params(
                                 grid,
                                 s_node,
@@ -7600,7 +7600,7 @@ impl AutoRouter {
                     let stub_len = 1.60;
                     let tip_pos = (px + world_inward.x * stub_len, py + world_inward.y * stub_len);
                     let clean_pad_net = pad.net_name.trim_start_matches('/');
-                    let stub_w = if clean_pad_net == "VBUS" || clean_pad_net.starts_with("USB_") { 0.20 } else { 0.15 };
+                    let stub_w = if clean_pad_net == "VBUS" || clean_pad_net.starts_with("USB_") { 0.20 } else { board.neckdown_width(pad.net_id) };
 
                     stubs.push(EscapeStub {
                         fp_idx,
@@ -7695,8 +7695,8 @@ impl AutoRouter {
                     let (norm_lx, norm_ly) = edge.local_normal();
                     let world_norm = Point::new(norm_lx, norm_ly).rotate_ccw(fp.rotation);
 
-                    let stub_w = board.get_netclass_for_net(pad.net_id).track_width.min(0.15);
-                    let eff_clearance = board.get_netclass_for_net(pad.net_id).clearance.min(0.15).max(0.12);
+                    let stub_w = board.get_netclass_for_net(pad.net_id).track_width.min(board.neckdown_width(pad.net_id));
+                    let eff_clearance = board.get_netclass_for_net(pad.net_id).clearance.min(board.neckdown_clearance(0.15)).max(0.12);
                     let stub_margin = (stub_w * 0.5) + eff_clearance;
 
                     // Clearance check against own footprint pads
@@ -7988,11 +7988,12 @@ impl AutoRouter {
                 };
                 let spoke_len = if matches!(pad.number.as_str(), "18" | "19") { 0.5375 } else { 0.90 };
                 let end = (px + world_inward.0 * spoke_len, py + world_inward.1 * spoke_len);
-                if is_track_segment_legal(board, (px, py), end, 0.15, u1.layer, gnd_net_id, 0.15) {
+                let spoke_w = board.neckdown_width(gnd_net_id);
+                if is_track_segment_legal(board, (px, py), end, spoke_w, u1.layer, gnd_net_id, board.neckdown_clearance(0.15)) {
                     board.tracks.push(TrackSegment {
                         start: (px, py),
                         end,
-                        width: 0.15,
+                        width: spoke_w,
                         layer: u1.layer,
                         net_id: gnd_net_id,
                         is_locked: false,
@@ -8254,7 +8255,7 @@ impl AutoRouter {
                             false
                         };
 
-                        for &(try_w, try_c) in &[(track_w, plane_c), (0.15, 0.15)] {
+                        for &(try_w, try_c) in &[(track_w, plane_c), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15))] {
                             for &tgt in &nearby_targets {
                                 if is_octilinear_segment((px, py), tgt)
                                     && is_track_segment_legal(board, (px, py), tgt, try_w, fp.layer, plane_net_id, try_c)
@@ -8308,7 +8309,7 @@ impl AutoRouter {
                             if let Some((vx, vy)) =
                                 Self::find_safe_plane_via_location(board, grid, plane_net_id, px, py, fp.layer, pad, &added_via_positions, Some(&drc_ctx))
                             {
-                                for &(try_w, try_c) in &[(track_w, plane_c), (0.15, 0.15)] {
+                                for &(try_w, try_c) in &[(track_w, plane_c), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15))] {
                                     let valid_dogleg = if is_octilinear_segment((px, py), (vx, vy))
                                         && is_track_segment_legal(board, (px, py), (vx, vy), try_w, fp.layer, plane_net_id, try_c)
                                     {
@@ -8523,7 +8524,7 @@ impl AutoRouter {
                                                 &added_via_positions,
                                                 Some(&drc_ctx),
                                             ) {
-                                                for &(try_w, try_c) in &[(track_w, plane_c), (0.15, 0.15)] {
+                                                for &(try_w, try_c) in &[(track_w, plane_c), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15))] {
                                                     let valid_dogleg = if is_octilinear_segment((px, py), (vx, vy))
                                                         && is_track_segment_legal(board, (px, py), (vx, vy), try_w, fp.layer, plane_net_id, try_c)
                                                     {
@@ -8733,7 +8734,7 @@ impl AutoRouter {
                                                 &added_via_positions,
                                                 Some(&drc_ctx),
                                             ) {
-                                                for &(try_w, try_c) in &[(track_w, plane_c), (0.15, 0.15)] {
+                                                for &(try_w, try_c) in &[(track_w, plane_c), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15))] {
                                                     let valid_dogleg = if is_octilinear_segment((px, py), (vx, vy))
                                                         && is_track_segment_legal(
                                                             board,
@@ -8905,7 +8906,7 @@ impl AutoRouter {
                             targets.sort_by(|a, b| {
                                 (a.0 - px).hypot(a.1 - py).partial_cmp(&(b.0 - px).hypot(b.1 - py)).unwrap_or(Ordering::Equal)
                             });
-                            for &(try_w, try_c) in &[(track_w, plane_c), (0.15, 0.15)] {
+                            for &(try_w, try_c) in &[(track_w, plane_c), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15))] {
                                 for &tgt in &targets {
                                     if (tgt.0 - px).hypot(tgt.1 - py) > 8.0 {
                                         break;
@@ -9123,7 +9124,7 @@ impl AutoRouter {
                                 for trk in &board.tracks {
                                     if trk.net_id != plane_net_id {
                                         let mut thin = trk.clone();
-                                        thin.width = thin.width.min(0.15);
+                                        thin.width = thin.width.min(board.neckdown_width(trk.net_id));
                                         local_grid.commit_track(&thin);
                                     }
                                 }
@@ -9176,7 +9177,7 @@ impl AutoRouter {
                                                 )
                                             })
                                             .or_else(|| {
-                                                used_fb_w = 0.15;
+                                                used_fb_w = board.neckdown_width(plane_net_id);
                                                 self.find_path_with_params(
                                                     &local_grid,
                                                     s_node,
@@ -9209,7 +9210,7 @@ impl AutoRouter {
                                                     merge_collinear_points(&mut layer_pts);
                                                     for seg in layer_pts.windows(2) {
                                                         if (seg[0].0 - seg[1].0).hypot(seg[0].1 - seg[1].1) > 1e-4 {
-                                                            if !is_track_segment_legal(board, seg[0], seg[1], used_fb_w, cur_layer, plane_net_id, 0.15) {
+                                                            if !is_track_segment_legal(board, seg[0], seg[1], used_fb_w, cur_layer, plane_net_id, board.neckdown_clearance(0.15)) {
                                                                 path_valid = false;
                                                                 break;
                                                             }
@@ -9260,7 +9261,7 @@ impl AutoRouter {
                                                 merge_collinear_points(&mut layer_pts);
                                                 for seg in layer_pts.windows(2) {
                                                     if (seg[0].0 - seg[1].0).hypot(seg[0].1 - seg[1].1) > 1e-4 {
-                                                        if !is_track_segment_legal(board, seg[0], seg[1], used_fb_w, cur_layer, plane_net_id, 0.15) {
+                                                        if !is_track_segment_legal(board, seg[0], seg[1], used_fb_w, cur_layer, plane_net_id, board.neckdown_clearance(0.15)) {
                                                             path_valid = false;
                                                             break;
                                                         }
@@ -9633,7 +9634,7 @@ impl AutoRouter {
             })
         };
 
-        for (try_w, try_c, offsets) in [(track_w, plane_c, &primary_offsets), (0.15, 0.15, &fallback_offsets)] {
+        for (try_w, try_c, offsets) in [(track_w, plane_c, &primary_offsets), (board.neckdown_width(plane_net_id), board.neckdown_clearance(0.15), &fallback_offsets)] {
             let mut valid_coords = Vec::with_capacity(offsets.len());
             let mut gpu_cands = Vec::with_capacity(offsets.len());
             for &(dx, dy) in offsets {
