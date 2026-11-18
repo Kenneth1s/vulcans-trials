@@ -3493,8 +3493,12 @@ impl Board {
             max_y = 124.0;
         }
 
-        // Ensure RF antenna overhang keepout if U4 is present
-        if keepouts.is_empty() && footprints.iter().any(|f| f.reference == "U4") {
+        // Ensure RF antenna overhang keepout if U4 is present (the author's demo board only: opt in with
+        // VULCAN_DEMO_U4_KEEPOUT=1; on other boards a U4 is any part and the fixed area lands anywhere)
+        if keepouts.is_empty()
+            && std::env::var("VULCAN_DEMO_U4_KEEPOUT").is_ok_and(|v| v == "1")
+            && footprints.iter().any(|f| f.reference == "U4")
+        {
             keepouts.push(KeepoutZone {
                 min_x: 172.1,
                 min_y: 91.0,
@@ -8363,7 +8367,7 @@ mod tests {
         )
         .unwrap();
         let u4_board = Board::load(u4_pcb_path, &HashSet::new()).unwrap();
-        assert_eq!(u4_board.keepouts.len(), 1);
+        assert_eq!(u4_board.keepouts.len(), 0); // U4 demo keepout is opt-in (VULCAN_DEMO_U4_KEEPOUT=1)
         assert!(Board::load("/tmp/nonexistent_vulcan_pcb_12345.kicad_pcb", &HashSet::new()).is_err());
 
         let _ = fs::remove_file(pcb_path);
